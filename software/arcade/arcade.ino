@@ -33,8 +33,8 @@
 #include <WiFiUdp.h>
 
 // GPIO pin number for the LEDs
-#define PIN_GREEN 0
-#define PIN_YELLOW 1
+#define PIN_CONNECTED 0
+#define PIN_DISCONNECTED 1
 
 // GPIO pin number for the joystick
 #define JS_UP 16
@@ -48,8 +48,8 @@
 #define BT_RIGHT 15
 
 // PWM channels
-#define PWM_GREEN 0
-#define PWM_YELLOW 1
+#define PWM_CONNECTED 0
+#define PWM_DISCONNECTED 1
 
 // WiFi parameters
 const char *ssid = "smartyrobot";
@@ -107,26 +107,28 @@ void setup()
   pinMode(BT_RIGHT, INPUT_PULLUP);
 
   // configure LED PWM functionalitites
-  pinMode(PIN_GREEN, OUTPUT);
-  pinMode(PIN_YELLOW, OUTPUT);
+  pinMode(PIN_CONNECTED, OUTPUT);
+  pinMode(PIN_DISCONNECTED, OUTPUT);
 
   // blink LEDs
-  analogWrite(PIN_GREEN, 2);
-  analogWrite(PIN_YELLOW, 2);
+  analogWrite(PIN_CONNECTED, 2);
+  analogWrite(PIN_DISCONNECTED, 2);
   delay(1000);
-  analogWrite(PIN_GREEN, 0);
+  // analogWrite(PIN_CONNECTED, 0);
 
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    Serial.print('.');
-    delay(500);
-  }
-  Serial.print("Connected! IP address: ");
-  Serial.println(WiFi.localIP());
+  // WiFi.begin(ssid, password);
+  // while (WiFi.status() != WL_CONNECTED)
+  // {
+  //   Serial.print('.');
+  //   delay(500);
+  // }
+  // Serial.print("Connected! IP address: ");
+  // Serial.println(WiFi.localIP());
 
-  analogWrite(PIN_YELLOW, 0);
-  analogWrite(PIN_GREEN, 2);
+  // analogWrite(PIN_DISCONNECTED, 0);
+  // analogWrite(PIN_CONNECTED, 2);
+
+  connectToWiFi(ssid, password);
 }
 
 void loop()
@@ -287,4 +289,25 @@ void loop()
         }
     }
   }
+}
+
+void connectToWiFi(const char *ssid, const char *pwd)
+{
+    analogWrite(PIN_DISCONNECTED, 2);
+    analogWrite(PIN_CONNECTED, 0);
+
+    // delete old config
+    WiFi.disconnect(true);
+
+    WiFi.begin(ssid, password);
+    while (WiFi.status() != WL_CONNECTED)
+    {
+      Serial.print('.');
+      delay(500);
+    }
+    Serial.print("Connected! IP address: ");
+    Serial.println(WiFi.localIP());
+
+    analogWrite(PIN_DISCONNECTED, 0);
+    analogWrite(PIN_CONNECTED, 2);
 }
