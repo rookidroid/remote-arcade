@@ -1,3 +1,9 @@
 # Arcade Remote
 
-![bannar](/imgs/arcade.jpg)
+![arcade](/images/arcade_1.jpg)
+
+## Electronics
+
+### Connection Diagram
+
+![diagram](./images/diagram.svg)
