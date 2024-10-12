@@ -34,3 +34,14 @@ A retro-style arcade controller for robots, built using ESP32 and Arduino.
 | arcade cover   | <img src="./images/arcade cover.jpg" alt="arcade cover" width="400"/>   | 1        |
 | battery cover  | <img src="./images/battery cover.jpg" alt="battery cover" width="400"/> | 1        |
 
+## Other Parts
+
+| Name      | Spec    | Required | Installation |
+| --------- | ------- | -------- | ------------ |
+| Screw     | M3 10mm | 10       | Cover and body |
+| Screw     | M4 10mm | 4        | Joystick |
+| Nuts      | M3      | 10       | Cover and body |
+| Nuts      | M4      | 4        | Joystick |
+| Standoffs | M2 Male Female Hex 4mm | 4        | Connect ESP32 to body |
+| Screw     | M2 4mm  | 4        | Connect ESP32 to body |
+| Magnets   | 5mm (diameter) x 2mm (thickness) | 8        | Hold battery cover |
