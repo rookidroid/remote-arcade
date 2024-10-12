@@ -25,3 +25,12 @@ A retro-style arcade controller for robots, built using ESP32 and Arduino.
 ### Connection Diagram
 
 ![diagram](./images/diagram.svg)
+
+## 3D-Printed Parts
+
+| Filename       | Thumbnail                                                               | Required |
+| -------------- | ----------------------------------------------------------------------- | -------- |
+| arcade body    | <img src="./images/arcade body.jpg" alt="arcade body" width="400"/>     | 1        |
+| arcade cover   | <img src="./images/arcade cover.jpg" alt="arcade cover" width="400"/>   | 1        |
+| battery cover  | <img src="./images/battery cover.jpg" alt="battery cover" width="400"/> | 1        |
+
