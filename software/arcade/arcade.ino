@@ -77,9 +77,40 @@ int bt_left = 1;
 int bt_right = 1;
 int bt_special = 1;
 
-int button_pressed = 0;
-
 Adafruit_NeoPixel rgbLed(1, PIN_RGB, NEO_GRB + NEO_KHZ800);
+
+enum RobotCommand : uint8_t {
+  CMD_STANDBY = 0,
+  CMD_WALK_0 = 1,
+  CMD_WALK_180 = 2,
+  CMD_WALK_R45 = 3,
+  CMD_WALK_R90 = 4,
+  CMD_WALK_R135 = 5,
+  CMD_WALK_L45 = 6,
+  CMD_WALK_L90 = 7,
+  CMD_WALK_L135 = 8,
+  CMD_FAST_FORWARD = 9,
+  CMD_FAST_BACKWARD = 10,
+  CMD_TURN_LEFT = 11,
+  CMD_TURN_RIGHT = 12,
+  CMD_CLIMB_FORWARD = 13,
+  CMD_CLIMB_BACKWARD = 14,
+  CMD_ROTATE_X = 15,
+  CMD_ROTATE_Y = 16,
+  CMD_ROTATE_Z = 17,
+  CMD_TWIST = 18
+};
+
+#pragma pack(push, 1)
+struct UdpControlPacket {
+  uint8_t magic;      // 0xA5
+  RobotCommand cmd;
+  uint32_t seq_num;
+};
+#pragma pack(pop)
+
+uint32_t packet_seq_num = 0;
+
 
 struct RGB {
   uint8_t r, g, b;
@@ -93,10 +124,6 @@ constexpr RGB COLOR_BLUE = { 0, 0, 255 };
 void setColor(const RGB &color) {
   rgbLed.setPixelColor(0, rgbLed.Color(color.r, color.g, color.b));
   rgbLed.show();
-}
-
-void IRAM_ATTR isrButton() {
-  button_pressed++;
 }
 
 void setup() {
@@ -118,18 +145,6 @@ void setup() {
   pinMode(BT_SPECIAL, INPUT_PULLUP);
 
 
-  attachInterrupt(JS_UP, isrButton, CHANGE);
-  attachInterrupt(JS_DOWN, isrButton, CHANGE);
-  attachInterrupt(JS_LEFT, isrButton, CHANGE);
-  attachInterrupt(JS_RIGHT, isrButton, CHANGE);
-
-  attachInterrupt(BT_UP, isrButton, CHANGE);
-  attachInterrupt(BT_DOWN, isrButton, CHANGE);
-  attachInterrupt(BT_LEFT, isrButton, CHANGE);
-  attachInterrupt(BT_RIGHT, isrButton, CHANGE);
-  attachInterrupt(BT_SPECIAL, isrButton, CHANGE);
-
-
   // analogWrite(LED_1, 2);
   // analogWrite(LED_2, 2);
   // analogWrite(LED_3, 2);
@@ -142,124 +157,94 @@ void setup() {
 
 
 void loop() {
-  if (button_pressed > 0) {
-    js_up = digitalRead(JS_UP);
-    js_down = digitalRead(JS_DOWN);
-    js_left = digitalRead(JS_LEFT);
-    js_right = digitalRead(JS_RIGHT);
+  js_up = digitalRead(JS_UP);
+  js_down = digitalRead(JS_DOWN);
+  js_left = digitalRead(JS_LEFT);
+  js_right = digitalRead(JS_RIGHT);
 
-    bt_up = digitalRead(BT_UP);
-    bt_down = digitalRead(BT_DOWN);
-    bt_left = digitalRead(BT_LEFT);
-    bt_right = digitalRead(BT_RIGHT);
-    bt_special = digitalRead(BT_SPECIAL);
+  bt_up = digitalRead(BT_UP);
+  bt_down = digitalRead(BT_DOWN);
+  bt_left = digitalRead(BT_LEFT);
+  bt_right = digitalRead(BT_RIGHT);
+  bt_special = digitalRead(BT_SPECIAL);
 
-    if ((js_up + js_down + js_left + js_right) != 4) {
-      if ((js_up + js_down + js_left + js_right) == 2) {
-        if (js_up == 0 && js_left == 0) {
-          udp.beginPacket(udpAddress, udpPort);
-          udp.printf(":walkl45:");
-          udp.endPacket();
-        } else if (js_up == 0 && js_right == 0) {
-          udp.beginPacket(udpAddress, udpPort);
-          udp.printf(":walkr45:");
-          udp.endPacket();
-        } else if (js_down == 0 && js_left == 0) {
-          udp.beginPacket(udpAddress, udpPort);
-          udp.printf(":walkl135:");
-          udp.endPacket();
-        } else if (js_down == 0 && js_right == 0) {
-          udp.beginPacket(udpAddress, udpPort);
-          udp.printf(":walkr135:");
-          udp.endPacket();
-        }
-      } else {
-        if (js_up == 0) {
-          if (bt_up == 0) {
-            udp.beginPacket(udpAddress, udpPort);
-            udp.printf(":fastforward:");
-            udp.endPacket();
-          } else {
-            udp.beginPacket(udpAddress, udpPort);
-            udp.printf(":walk0:");
-            udp.endPacket();
-          }
-        } else if (js_down == 0) {
-          if (bt_down == 0) {
-            udp.beginPacket(udpAddress, udpPort);
-            udp.printf(":fastbackward:");
-            udp.endPacket();
-          } else {
-            udp.beginPacket(udpAddress, udpPort);
-            udp.printf(":walk180:");
-            udp.endPacket();
-          }
-        } else if (js_left == 0) {
-          udp.beginPacket(udpAddress, udpPort);
-          udp.printf(":walkl90:");
-          udp.endPacket();
-        } else if (js_right == 0) {
-          udp.beginPacket(udpAddress, udpPort);
-          udp.printf(":walkr90:");
-          udp.endPacket();
-        }
-      }
-    } else if ((bt_up + bt_down + bt_left + bt_right + bt_special) != 5) {
-      if (bt_special == 0) {
-        if (bt_up == 0) {
-          udp.beginPacket(udpAddress, udpPort);
-          udp.printf(":rotatex:");
-          udp.endPacket();
-        } else if (bt_left == 0) {
-          udp.beginPacket(udpAddress, udpPort);
-          udp.printf(":rotatey:");
-          udp.endPacket();
-        } else if (bt_right == 0) {
-          udp.beginPacket(udpAddress, udpPort);
-          udp.printf(":rotatez:");
-          udp.endPacket();
-        } else if (bt_down == 0) {
-          udp.beginPacket(udpAddress, udpPort);
-          udp.printf(":twist:");
-          udp.endPacket();
-        }
-      } else if (bt_up == 0) {
-        if (js_up == 0) {
-          udp.beginPacket(udpAddress, udpPort);
-          udp.printf(":fastforward:");
-          udp.endPacket();
-        } else {
-          udp.beginPacket(udpAddress, udpPort);
-          udp.printf(":walk0:");
-          udp.endPacket();
-        }
-      } else if (bt_down == 0) {
-        if (js_down == 0) {
-          udp.beginPacket(udpAddress, udpPort);
-          udp.printf(":fastbackward:");
-          udp.endPacket();
-        } else {
-          udp.beginPacket(udpAddress, udpPort);
-          udp.printf(":walk180:");
-          udp.endPacket();
-        }
-      } else if (bt_left == 0) {
-        udp.beginPacket(udpAddress, udpPort);
-        udp.printf(":turnleft:");
-        udp.endPacket();
-      } else if (bt_right == 0) {
-        udp.beginPacket(udpAddress, udpPort);
-        udp.printf(":turnright:");
-        udp.endPacket();
+  RobotCommand cmd_to_send = CMD_STANDBY;
+
+  if ((js_up + js_down + js_left + js_right) != 4) {
+    if ((js_up + js_down + js_left + js_right) == 2) {
+      if (js_up == 0 && js_left == 0) {
+        cmd_to_send = CMD_WALK_L45;
+      } else if (js_up == 0 && js_right == 0) {
+        cmd_to_send = CMD_WALK_R45;
+      } else if (js_down == 0 && js_left == 0) {
+        cmd_to_send = CMD_WALK_L135;
+      } else if (js_down == 0 && js_right == 0) {
+        cmd_to_send = CMD_WALK_R135;
       }
     } else {
-      udp.beginPacket(udpAddress, udpPort);
-      udp.printf(":standby:");
-      udp.endPacket();
+      if (js_up == 0) {
+        if (bt_up == 0) {
+          cmd_to_send = CMD_FAST_FORWARD;
+        } else {
+          cmd_to_send = CMD_WALK_0;
+        }
+      } else if (js_down == 0) {
+        if (bt_down == 0) {
+          cmd_to_send = CMD_FAST_BACKWARD;
+        } else {
+          cmd_to_send = CMD_WALK_180;
+        }
+      } else if (js_left == 0) {
+        cmd_to_send = CMD_WALK_L90;
+      } else if (js_right == 0) {
+        cmd_to_send = CMD_WALK_R90;
+      }
     }
-    button_pressed--;
+  } else if ((bt_up + bt_down + bt_left + bt_right + bt_special) != 5) {
+    if (bt_special == 0) {
+      if (bt_up == 0) {
+        cmd_to_send = CMD_ROTATE_X;
+      } else if (bt_left == 0) {
+        cmd_to_send = CMD_ROTATE_Y;
+      } else if (bt_right == 0) {
+        cmd_to_send = CMD_ROTATE_Z;
+      } else if (bt_down == 0) {
+        cmd_to_send = CMD_TWIST;
+      }
+    } else if (bt_up == 0) {
+      if (js_up == 0) {
+        cmd_to_send = CMD_FAST_FORWARD;
+      } else {
+        cmd_to_send = CMD_WALK_0;
+      }
+    } else if (bt_down == 0) {
+      if (js_down == 0) {
+        cmd_to_send = CMD_FAST_BACKWARD;
+      } else {
+        cmd_to_send = CMD_WALK_180;
+      }
+    } else if (bt_left == 0) {
+      cmd_to_send = CMD_TURN_LEFT;
+    } else if (bt_right == 0) {
+      cmd_to_send = CMD_TURN_RIGHT;
+    }
+  } else {
+    cmd_to_send = CMD_STANDBY;
   }
-  delay(50);
+
+  // Send packet if connected
+  if (connected) {
+    UdpControlPacket packet;
+    packet.magic = 0xA5;
+    packet.cmd = cmd_to_send;
+    packet.seq_num = packet_seq_num++;
+
+    udp.beginPacket(udpAddress, udpPort);
+    udp.write((const uint8_t *)&packet, sizeof(packet));
+    udp.endPacket();
+  }
+
+  delay(50); // 20Hz continuous heartbeat
 }
 
 void connectToWiFi(const char *ssid, const char *pwd) {
