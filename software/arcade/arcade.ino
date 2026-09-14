@@ -57,7 +57,7 @@
 
 
 // WiFi parameters
-const char *ssid = "hexapod";
+const char *ssid = "hexapod_nougat";
 const char *password = "hexapod_1234";
 boolean connected = false;
 
