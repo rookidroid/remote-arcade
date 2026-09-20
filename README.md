@@ -5,6 +5,7 @@ A retro-style arcade controller for robots — a 4-way arcade joystick, five arc
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Platform: ESP32-C6](https://img.shields.io/badge/platform-ESP32--C6-black.svg)](https://www.espressif.com/en/products/socs/esp32-c6)
 [![Website](https://img.shields.io/badge/web-rookidroid.com-ff7f2a.svg)](https://rookidroid.com/)
+[![Build Guide](https://img.shields.io/badge/guide-build%20the%20arcade%20remote-9c27b0.svg)](https://rookidroid.com/build-the-arcade-remote/)
 
 <img src="./images/arcade_top.jpg" alt="arcade_top" width="400"/> <img src="./images/arcade_back.jpg" alt="arcade_back" width="400"/>
 
@@ -38,7 +39,9 @@ A retro-style arcade controller for robots — a 4-way arcade joystick, five arc
 
 ## Introduction
 
-This remote turns real arcade hardware into a WiFi controller for the [RookiDroid hexapod](https://github.com/rookidroid/hexapod) and any other robot that speaks the same binary UDP protocol.
+This remote turns real arcade hardware into a WiFi controller for the [RookiDroid hexapod](https://github.com/rookidroid/hexapod) — **all three of them**, Nougat, Mochi and Macaroon — and any other robot that speaks the same binary UDP protocol. Only the `ssid` line in the sketch changes between robots; see [Configuration](#configuration).
+
+Prefer a step-by-step walkthrough with photos? The same build is documented as the [Build the Arcade Remote](https://rookidroid.com/build-the-arcade-remote/) guide on rookidroid.com.
 
 - **Real arcade feel** — a microswitch joystick and five snap-in arcade buttons, no analog sticks and no deadzone
 - **All-digital inputs** — nine switches on `INPUT_PULLUP` GPIOs, with no debounce logic needed because commands are re-sent continuously
@@ -67,7 +70,7 @@ This remote turns real arcade hardware into a WiFi controller for the [RookiDroi
 
 | Name | Thumbnail | Required # | Specifications | Note |
 | ---- | --------- | ---------- | -------------- | ---- |
-| Controller board | <img src="./images/arcade_controller.jpg" alt="controller_board" width="300"/> | 1 | ESP32-C6 SuperMini on a carrier board with a Mini360 buck converter, power switch, 2-pin battery terminal, a 5-pin joystick header (`GP0`–`GP3`) and a 2×7 button header | A bare ESP32-C6 SuperMini also works if you wire the switches straight to the GPIOs in the [pin map](#pin-map) and feed it 5 V |
+| Controller board | <img src="./images/arcade_controller.jpg" alt="controller_board" width="300"/> | 1 | ESP32-C6 SuperMini on a carrier board with a Mini360 buck converter, power switch, 2-pin battery terminal, a 5-pin joystick header (`GP0`–`GP3`) and a 2×7 button header | [Purchase](https://rookidroid.com/product/arcade-controller-board/) — or use a bare ESP32-C6 SuperMini, wiring the switches straight to the GPIOs in the [pin map](#pin-map) and feeding it 5 V |
 | Arcade joystick | <img src="./images/joystick.jpg" alt="joystick" width="300"/> | 1 | Microswitch joystick, 97 × 65 mm mounting plate, ~119 mm overall height, 5-pin harness | Ball top; the harness plugs into the joystick header |
 | Arcade push button | <img src="./images/push_button.jpg" alt="push_button" width="300"/> | 5 | 30 mm snap-in button with a microswitch (2 terminals) | Any five colors — four for the direction cluster, one for the special/modifier button |
 | 9 V battery connector | <img src="./images/battery_connector.jpg" alt="battery_connector" width="300"/> | 1 | Snap connector with flying leads | Screws into the 2-pin terminal block — mind the polarity |
@@ -110,7 +113,7 @@ The four direction buttons are the cluster outlined on the top panel; the button
 
 ## 3D-Printed Parts
 
-The whole cabinet is one Bambu Studio project: [`3d model/arcade.3mf`](./3d%20model/arcade.3mf). The Fusion 360 source is [`3d model/arcade.f3d`](./3d%20model/arcade.f3d).
+The whole cabinet is one Bambu Studio project: [`3d model/arcade.3mf`](./3d%20model/arcade.3mf), also a [free download](https://rookidroid.com/product/arcade-controller/) from the RookiDroid shop. The Fusion 360 source is [`3d model/arcade.f3d`](./3d%20model/arcade.f3d).
 
 | Part | Required # | Note |
 | ---- | ---------- | ---- |
@@ -167,6 +170,16 @@ Edit these near the top of the sketch to match your robot:
 | `udpPort` | `1234` | UDP port the robot listens on |
 
 `setup()` blocks until the robot's network is reachable, so power the robot up first.
+
+The same remote drives every RookiDroid hexapod — each one hosts its own access point at `192.168.4.1` and listens on port `1234`, so only `ssid` changes:
+
+| Robot | `ssid` | `password` | Build guide |
+| ----- | ------ | ---------- | ----------- |
+| Hexapod Nougat | `hexapod_nougat` | `hexapod_1234` | [Build Nougat](https://rookidroid.com/build-your-own-nougat/) |
+| Hexapod Mochi | `hexapod` | `hexapod_1234` | [Build Mochi](https://rookidroid.com/build-your-own-mochi/) |
+| Hexapod Macaroon | `hexapod_macaroon` | `hexapod_1234` | [Build Macaroon](https://rookidroid.com/build-your-own-macaroon/) |
+
+If you changed the credentials in your robot's own `config.h`, match them here.
 
 ### Status LED
 
@@ -253,6 +266,16 @@ The layout matches `UdpControlPacket` in the hexapod firmware — see the [hexap
 | Robot keeps moving after you let go | Standby packets aren't arriving — check the WiFi link; the robot should also have its own failsafe |
 | Board doesn't enumerate over USB | Hold **BOOT**, tap **RESET**, release **BOOT**, then upload |
 
+## Related Projects
+
+| Project | What it is |
+| ------- | ---------- |
+| [Build the Arcade Remote](https://rookidroid.com/build-the-arcade-remote/) | The four-phase build guide for this remote, with photos and wiring |
+| [hexapod](https://github.com/rookidroid/hexapod) | The robot this remote drives — Nougat, Mochi and Macaroon all share the UDP protocol |
+| [Arcade Controller](https://rookidroid.com/product/arcade-controller/) | The 3D print files for this cabinet, as a free download |
+| [Arcade Controller Board](https://rookidroid.com/product/arcade-controller-board/) | The ESP32-C6 carrier board used here |
+| [hexapod-link](https://github.com/rookidroid/hexapod-link) | Desktop app for real-time pose streaming to the hexapod |
+
 ## License
 
 This project is licensed under the **MIT License** — see [LICENSE](./LICENSE) for the full text.
@@ -260,5 +283,6 @@ This project is licensed under the **MIT License** — see [LICENSE](./LICENSE) 
 ## Support
 
 - Website: [rookidroid.com](https://rookidroid.com/)
+- Build guide: [Build the Arcade Remote](https://rookidroid.com/build-the-arcade-remote/)
 - Email: [info@rookidroid.com](mailto:info@rookidroid.com)
 - Bugs and build questions: [GitHub Issues](https://github.com/rookidroid/remote-arcade/issues)
