@@ -47,7 +47,8 @@ Prefer a step-by-step walkthrough with photos? The same build is documented as t
 - **All-digital inputs** — nine switches on `INPUT_PULLUP` GPIOs, scanned every 5 ms; a command must hold for 30 ms before it is sent, which filters switch bounce and half-pressed button combos
 - **WiFi direct to the robot** — the remote joins the robot's own access point, so no router is involved, with WiFi power saving off for low latency
 - **Instant send + 20 Hz heartbeat** — a new command goes out as soon as it settles, and the current one is repeated every 50 ms, so releasing a control stops the robot right away
-- **RGB status LED** — shows the link state and what the remote is sending, visible through the window in the top panel
+- **Adjustable speed** — five speed levels from 20 % to 100 % of the robot's gait speed, stepped with special + joystick and remembered across power cycles
+- **RGB status LED** — shows the link state, what the remote is sending and the speed level, visible through the window in the top panel
 - **Battery powered** — a single 9 V battery in a magnetically-latched bay in the back
 - **Fully 3D-printed cabinet** — one Bambu Studio project prints the whole enclosure
 
@@ -60,7 +61,7 @@ Prefer a step-by-step walkthrough with photos? The same build is documented as t
 | **Feedback** | 1 × WS2812 (NeoPixel) RGB status LED on `GP8` |
 | **Power** | 9 V battery → on-board Mini360 buck converter → 5 V, with a slide switch on the board |
 | **Connectivity** | 2.4 GHz WiFi — the remote joins the robot's access point as a station |
-| **Control** | 6-byte binary UDP packets to `192.168.4.1:1234` |
+| **Control** | 7-byte binary UDP packets to `192.168.4.1:1234`, carrying the command and the speed level |
 | **Update rate** | Sent on change (30 ms settle), plus a 20 Hz heartbeat that runs continuously, including standby |
 | **Enclosure** | 3D-printed body, cover, bottom plate and magnetic battery cover |
 
@@ -192,6 +193,9 @@ If you changed the credentials in your robot's own `config.h`, match them here.
 | Cyan | Connected, walking or turning |
 | Yellow | Connected, turbo (fast forward/backward) |
 | Magenta | Connected, body motion (pitch, roll, yaw or twist) |
+| White flash | Speed level changed |
+
+While connected, the LED **brightness** shows the speed level: dimmest at 20 %, brightest at 100 %.
 
 ## Controls
 
@@ -199,7 +203,7 @@ The firmware reads all nine switches every 5 ms and maps them to exactly one com
 
 The 30 ms settle time means you don't have to press combos such as **special + up** perfectly together: the command the robot gets is the finished combo, not whichever button closed first.
 
-**Joystick** (takes priority over the buttons):
+**Joystick** (takes priority over the direction buttons; special + joystick changes the speed instead, see below):
 
 | Joystick | Command | Action |
 | -------- | ------- | ------ |
@@ -227,15 +231,20 @@ The 30 ms settle time means you don't have to press combos such as **special + u
 
 **Turbo:** hold the **up** button while pushing the joystick up for `CMD_FAST_FORWARD`, or the **down** button while pulling the joystick down for `CMD_FAST_BACKWARD`.
 
+**Speed:** hold **special** and flick the joystick **up** to speed up one level, or **down** to slow down one level. The robot holds still while special and the joystick are both pressed. There are five levels — 20, 40, 60, 80 and 100 % of the robot's gait speed — starting at 60 %. Each flick steps one level (holding does not repeat), the LED flashes white, and its brightness then shows the new level. The level is saved in the remote's flash and restored at power-on, and it is sent with every packet, so the robot always follows the remote.
+
 ## UDP Protocol
 
-Each packet is 6 bytes, little-endian and unpadded, sent to `192.168.4.1:1234`:
+Each packet is 7 bytes, little-endian and unpadded, sent to `192.168.4.1:1234`:
 
 | Offset | Field | Type | Value |
 | ------ | ----- | ---- | ----- |
 | 0 | `magic` | `uint8` | `0xA5` — motion command |
 | 1 | `cmd` | `uint8` | Command ID from the table below |
 | 2–5 | `seq_num` | `uint32` | Increments on every packet |
+| 6 | `speed_pct` | `uint8` | Gait speed in percent: 20, 40, 60, 80 or 100 |
+
+> **Robot firmware:** the speed byte needs hexapod firmware with motion-speed support. Older firmware only accepts the 6-byte packet and ignores this remote — update the robot too.
 
 | ID | Command | Sent by this remote |
 | -- | ------- | ------------------- |
@@ -266,7 +275,8 @@ The layout matches `UdpControlPacket` in the hexapod firmware — see the [hexap
 | Symptom | Things to check |
 | ------- | --------------- |
 | LED keeps blinking blue | The robot isn't powered up, or the SSID/password don't match — the remote keeps retrying until it finds the AP |
-| LED is green but the robot ignores the remote | `udpAddress` and `udpPort` must match the robot, and the robot must be in its normal (non-calibration) mode |
+| LED is green but the robot ignores the remote | `udpAddress` and `udpPort` must match the robot, the robot must be in its normal (non-calibration) mode, and its firmware must accept the 7-byte packet — see [UDP Protocol](#udp-protocol) |
+| Robot walks slowly | The speed level is low — hold special and flick the joystick up; a dim LED means a low level |
 | One direction never triggers | Check that switch's signal wire and its `GND` — an unconnected `INPUT_PULLUP` pin just reads high forever |
 | Diagonals don't work | The joystick has a 4-way restrictor plate fitted; swap in the 8-way gate |
 | Robot keeps moving after you let go | Standby packets aren't arriving — check the WiFi link; the robot should also have its own failsafe |
