@@ -38,17 +38,12 @@
 #define PIN_RGB 8
 
 // GPIO pin number for the joystick
-#define PIN_X 3
-#define PIN_Y 2
-#define PIN_SW 1
-
-
-// GPIO pin number for the joystick
 #define JS_UP 3
 #define JS_DOWN 2
 #define JS_LEFT 0
 #define JS_RIGHT 1
 
+// GPIO pin number for the buttons
 #define BT_UP 14
 #define BT_DOWN 15
 #define BT_LEFT 18
@@ -59,23 +54,21 @@
 // WiFi parameters
 const char *ssid = "hexapod_nougat";
 const char *password = "hexapod_1234";
-boolean connected = false;
 
 // UDP
 WiFiUDP udp;
-const char *udpAddress = "192.168.4.1";
+const IPAddress udpAddress(192, 168, 4, 1);
 const int udpPort = 1234;
 
-int js_up = 1;
-int js_down = 1;
-int js_left = 1;
-int js_right = 1;
+// Timing (ms)
+const unsigned long SCAN_PERIOD_MS = 5;    // How often the switches are read
+const unsigned long SETTLE_MS = 30;        // A new command must hold this long before it is sent
+const unsigned long HEARTBEAT_MS = 50;     // Resend the current command at 20 Hz
+const unsigned long RECONNECT_MS = 10000;  // Kick the WiFi stack if the link stays down this long
+const unsigned long BLINK_MS = 250;        // Half period of the status LED blink
 
-int bt_up = 1;
-int bt_down = 1;
-int bt_left = 1;
-int bt_right = 1;
-int bt_special = 1;
+// Status LED brightness (0-255); full brightness is blinding through the window
+const uint8_t LED_BRIGHTNESS = 40;
 
 Adafruit_NeoPixel rgbLed(1, PIN_RGB, NEO_GRB + NEO_KHZ800);
 
@@ -111,6 +104,18 @@ struct UdpControlPacket {
 
 uint32_t packet_seq_num = 0;
 
+// Command state
+RobotCommand candidate_cmd = CMD_STANDBY;  // Latest reading, still settling
+RobotCommand active_cmd = CMD_STANDBY;     // Command being sent to the robot
+unsigned long candidate_since_ms = 0;
+unsigned long last_scan_ms = 0;
+unsigned long last_send_ms = 0;
+
+// Link state, polled from loop() so nothing is shared with the WiFi task
+bool link_up = false;
+bool ever_connected = false;
+unsigned long last_reconnect_ms = 0;
+
 
 struct RGB {
   uint8_t r, g, b;
@@ -120,8 +125,18 @@ constexpr RGB COLOR_OFF = { 0, 0, 0 };
 constexpr RGB COLOR_RED = { 255, 0, 0 };
 constexpr RGB COLOR_GREEN = { 0, 255, 0 };
 constexpr RGB COLOR_BLUE = { 0, 0, 255 };
+constexpr RGB COLOR_CYAN = { 0, 255, 255 };
+constexpr RGB COLOR_YELLOW = { 255, 180, 0 };
+constexpr RGB COLOR_MAGENTA = { 255, 0, 255 };
+
+RGB led_color = COLOR_OFF;
 
 void setColor(const RGB &color) {
+  // Only touch the LED when the color changes; show() is not free
+  if (color.r == led_color.r && color.g == led_color.g && color.b == led_color.b) {
+    return;
+  }
+  led_color = color;
   rgbLed.setPixelColor(0, rgbLed.Color(color.r, color.g, color.b));
   rgbLed.show();
 }
@@ -132,6 +147,7 @@ void setup() {
   delay(10);
 
   rgbLed.begin();
+  rgbLed.setBrightness(LED_BRIGHTNESS);
   rgbLed.show();
 
   pinMode(JS_UP, INPUT_PULLUP);
@@ -144,146 +160,199 @@ void setup() {
   pinMode(BT_RIGHT, INPUT_PULLUP);
   pinMode(BT_SPECIAL, INPUT_PULLUP);
 
+  // Connect in the background; loop() tracks the link and keeps retrying
+  WiFi.mode(WIFI_STA);
+  // Modem sleep holds packets for up to a beacon interval; the remote needs low latency
+  WiFi.setSleep(false);
+  WiFi.setAutoReconnect(true);
+  WiFi.begin(ssid, password);
+  last_reconnect_ms = millis();
 
-  // analogWrite(LED_1, 2);
-  // analogWrite(LED_2, 2);
-  // analogWrite(LED_3, 2);
-  // analogWrite(LED_4, 2);
-
-  delay(1000);
-
-  connectToWiFi(ssid, password);
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
 }
 
 
 void loop() {
-  js_up = digitalRead(JS_UP);
-  js_down = digitalRead(JS_DOWN);
-  js_left = digitalRead(JS_LEFT);
-  js_right = digitalRead(JS_RIGHT);
+  const unsigned long now = millis();
 
-  bt_up = digitalRead(BT_UP);
-  bt_down = digitalRead(BT_DOWN);
-  bt_left = digitalRead(BT_LEFT);
-  bt_right = digitalRead(BT_RIGHT);
-  bt_special = digitalRead(BT_SPECIAL);
+  updateLink(now);
 
-  RobotCommand cmd_to_send = CMD_STANDBY;
-
-  if ((js_up + js_down + js_left + js_right) != 4) {
-    if ((js_up + js_down + js_left + js_right) == 2) {
-      if (js_up == 0 && js_left == 0) {
-        cmd_to_send = CMD_WALK_L45;
-      } else if (js_up == 0 && js_right == 0) {
-        cmd_to_send = CMD_WALK_R45;
-      } else if (js_down == 0 && js_left == 0) {
-        cmd_to_send = CMD_WALK_L135;
-      } else if (js_down == 0 && js_right == 0) {
-        cmd_to_send = CMD_WALK_R135;
-      }
-    } else {
-      if (js_up == 0) {
-        if (bt_up == 0) {
-          cmd_to_send = CMD_FAST_FORWARD;
-        } else {
-          cmd_to_send = CMD_WALK_0;
-        }
-      } else if (js_down == 0) {
-        if (bt_down == 0) {
-          cmd_to_send = CMD_FAST_BACKWARD;
-        } else {
-          cmd_to_send = CMD_WALK_180;
-        }
-      } else if (js_left == 0) {
-        cmd_to_send = CMD_WALK_L90;
-      } else if (js_right == 0) {
-        cmd_to_send = CMD_WALK_R90;
-      }
-    }
-  } else if ((bt_up + bt_down + bt_left + bt_right + bt_special) != 5) {
-    if (bt_special == 0) {
-      if (bt_up == 0) {
-        cmd_to_send = CMD_ROTATE_X;
-      } else if (bt_left == 0) {
-        cmd_to_send = CMD_ROTATE_Y;
-      } else if (bt_right == 0) {
-        cmd_to_send = CMD_ROTATE_Z;
-      } else if (bt_down == 0) {
-        cmd_to_send = CMD_TWIST;
-      }
-    } else if (bt_up == 0) {
-      if (js_up == 0) {
-        cmd_to_send = CMD_FAST_FORWARD;
-      } else {
-        cmd_to_send = CMD_WALK_0;
-      }
-    } else if (bt_down == 0) {
-      if (js_down == 0) {
-        cmd_to_send = CMD_FAST_BACKWARD;
-      } else {
-        cmd_to_send = CMD_WALK_180;
-      }
-    } else if (bt_left == 0) {
-      cmd_to_send = CMD_TURN_LEFT;
-    } else if (bt_right == 0) {
-      cmd_to_send = CMD_TURN_RIGHT;
-    }
-  } else {
-    cmd_to_send = CMD_STANDBY;
+  if (now - last_scan_ms >= SCAN_PERIOD_MS) {
+    last_scan_ms = now;
+    scanInputs(now);
   }
 
-  // Send packet if connected
-  if (connected) {
-    UdpControlPacket packet;
-    packet.magic = 0xA5;
-    packet.cmd = cmd_to_send;
-    packet.seq_num = packet_seq_num++;
-
-    udp.beginPacket(udpAddress, udpPort);
-    udp.write((const uint8_t *)&packet, sizeof(packet));
-    udp.endPacket();
+  if (now - last_send_ms >= HEARTBEAT_MS) {
+    sendCommand(active_cmd, now);
   }
 
-  delay(50); // 20Hz continuous heartbeat
+  updateLed(now);
+
+  delay(1);  // Yield to the WiFi task
 }
 
-void connectToWiFi(const char *ssid, const char *pwd) {
-  // delete old config
-  WiFi.disconnect(true);
-  // register event handler
-  WiFi.onEvent(WiFiEvent);
+/**
+   Read the switches and return the command they select. The joystick takes
+   priority over the buttons.
+*/
+RobotCommand readCommand() {
+  // Switches pull to ground when pressed
+  const bool js_up = digitalRead(JS_UP) == LOW;
+  const bool js_down = digitalRead(JS_DOWN) == LOW;
+  const bool js_left = digitalRead(JS_LEFT) == LOW;
+  const bool js_right = digitalRead(JS_RIGHT) == LOW;
 
-  // initiate connection
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.print('.');
-    delay(500);
+  const bool bt_up = digitalRead(BT_UP) == LOW;
+  const bool bt_down = digitalRead(BT_DOWN) == LOW;
+  const bool bt_left = digitalRead(BT_LEFT) == LOW;
+  const bool bt_right = digitalRead(BT_RIGHT) == LOW;
+  const bool bt_special = digitalRead(BT_SPECIAL) == LOW;
+
+  const int js_count = js_up + js_down + js_left + js_right;
+
+  if (js_count == 2) {
+    // Diagonals
+    if (js_up && js_left) return CMD_WALK_L45;
+    if (js_up && js_right) return CMD_WALK_R45;
+    if (js_down && js_left) return CMD_WALK_L135;
+    if (js_down && js_right) return CMD_WALK_R135;
+    return CMD_STANDBY;
   }
-  Serial.print("Connected! IP address: ");
-  Serial.println(WiFi.localIP());
+
+  if (js_count > 0) {
+    // Holding the matching button turns a straight walk into turbo
+    if (js_up) return bt_up ? CMD_FAST_FORWARD : CMD_WALK_0;
+    if (js_down) return bt_down ? CMD_FAST_BACKWARD : CMD_WALK_180;
+    if (js_left) return CMD_WALK_L90;
+    if (js_right) return CMD_WALK_R90;
+    return CMD_STANDBY;
+  }
+
+  if (bt_special) {
+    if (bt_up) return CMD_ROTATE_X;
+    if (bt_left) return CMD_ROTATE_Y;
+    if (bt_right) return CMD_ROTATE_Z;
+    if (bt_down) return CMD_TWIST;
+    return CMD_STANDBY;
+  }
+
+  if (bt_up) return CMD_WALK_0;
+  if (bt_down) return CMD_WALK_180;
+  if (bt_left) return CMD_TURN_LEFT;
+  if (bt_right) return CMD_TURN_RIGHT;
+
+  return CMD_STANDBY;
 }
 
-// WiFi event handler
-void WiFiEvent(WiFiEvent_t event) {
-  switch (event) {
-    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-      // when connected set
-      Serial.print("WiFi connected! IP address: ");
-      Serial.println(WiFi.localIP());
-      // initializes the UDP state
-      // this initializes the transfer buffer
-      udp.begin(WiFi.localIP(), udpPort);
-      connected = true;
-      setColor(COLOR_GREEN);
+/**
+   Sample the inputs and switch to a new command once it has settled.
 
-      break;
-    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-      Serial.println("WiFi lost connection");
-      connected = false;
-      setColor(COLOR_RED);
+   Pressing a chord such as special + up rarely closes both switches in the
+   same sample, and the robot commits to a whole gait cycle if a stray command
+   lands on one of its switch points. Requiring SETTLE_MS of stability filters
+   those transients (and switch bounce) out.
+*/
+void scanInputs(unsigned long now) {
+  const RobotCommand reading = readCommand();
 
-      break;
+  if (reading != candidate_cmd) {
+    candidate_cmd = reading;
+    candidate_since_ms = now;
+    return;
+  }
+
+  if (candidate_cmd != active_cmd && now - candidate_since_ms >= SETTLE_MS) {
+    active_cmd = candidate_cmd;
+    // Send right away instead of waiting for the next heartbeat
+    sendCommand(active_cmd, now);
+  }
+}
+
+/**
+   Send one motion packet. The heartbeat timer restarts even while the link is
+   down, so a dead link does not spin on send attempts.
+*/
+void sendCommand(RobotCommand cmd, unsigned long now) {
+  last_send_ms = now;
+
+  if (!link_up) {
+    return;
+  }
+
+  UdpControlPacket packet;
+  packet.magic = 0xA5;
+  packet.cmd = cmd;
+  packet.seq_num = packet_seq_num++;
+
+  udp.beginPacket(udpAddress, udpPort);
+  udp.write((const uint8_t *)&packet, sizeof(packet));
+  udp.endPacket();
+}
+
+/**
+   Track the WiFi link and nudge the stack if it stays down.
+*/
+void updateLink(unsigned long now) {
+  const bool up = WiFi.status() == WL_CONNECTED;
+
+  if (up && !link_up) {
+    link_up = true;
+    ever_connected = true;
+    Serial.print("WiFi connected! IP address: ");
+    Serial.println(WiFi.localIP());
+    udp.begin(udpPort);
+    // Tell the robot what the controls say straight away
+    sendCommand(active_cmd, now);
+  } else if (!up && link_up) {
+    link_up = false;
+    last_reconnect_ms = now;
+    Serial.println("WiFi lost connection");
+    udp.stop();
+  }
+
+  // Auto-reconnect normally handles this; retry by hand if it gets stuck
+  if (!link_up && now - last_reconnect_ms >= RECONNECT_MS) {
+    last_reconnect_ms = now;
+    Serial.println("Retrying WiFi connection");
+    WiFi.reconnect();
+  }
+}
+
+/**
+   LED color for a command category.
+*/
+RGB commandColor(RobotCommand cmd) {
+  switch (cmd) {
+    case CMD_STANDBY:
+      return COLOR_GREEN;
+    case CMD_FAST_FORWARD:
+    case CMD_FAST_BACKWARD:
+      return COLOR_YELLOW;
+    case CMD_ROTATE_X:
+    case CMD_ROTATE_Y:
+    case CMD_ROTATE_Z:
+    case CMD_TWIST:
+      return COLOR_MAGENTA;
     default:
-      break;
+      return COLOR_CYAN;
+  }
+}
+
+/**
+   Blink blue while connecting, red once the link is lost, and show the
+   active command's category while connected.
+*/
+void updateLed(unsigned long now) {
+  if (link_up) {
+    setColor(commandColor(active_cmd));
+    return;
+  }
+
+  const bool blink_on = (now / BLINK_MS) % 2 == 0;
+  if (!blink_on) {
+    setColor(COLOR_OFF);
+  } else {
+    setColor(ever_connected ? COLOR_RED : COLOR_BLUE);
   }
 }

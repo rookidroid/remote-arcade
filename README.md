@@ -44,10 +44,10 @@ This remote turns real arcade hardware into a WiFi controller for the [RookiDroi
 Prefer a step-by-step walkthrough with photos? The same build is documented as the [Build the Arcade Remote](https://rookidroid.com/build-the-arcade-remote/) guide on rookidroid.com.
 
 - **Real arcade feel** — a microswitch joystick and five snap-in arcade buttons, no analog sticks and no deadzone
-- **All-digital inputs** — nine switches on `INPUT_PULLUP` GPIOs, with no debounce logic needed because commands are re-sent continuously
-- **WiFi direct to the robot** — the remote joins the robot's own access point, so no router is involved
-- **20 Hz heartbeat** — the current command is sent every 50 ms, so releasing a control stops the robot right away
-- **RGB status LED** — green when the link is up, red when it drops, visible through the window in the top panel
+- **All-digital inputs** — nine switches on `INPUT_PULLUP` GPIOs, scanned every 5 ms; a command must hold for 30 ms before it is sent, which filters switch bounce and half-pressed button combos
+- **WiFi direct to the robot** — the remote joins the robot's own access point, so no router is involved, with WiFi power saving off for low latency
+- **Instant send + 20 Hz heartbeat** — a new command goes out as soon as it settles, and the current one is repeated every 50 ms, so releasing a control stops the robot right away
+- **RGB status LED** — shows the link state and what the remote is sending, visible through the window in the top panel
 - **Battery powered** — a single 9 V battery in a magnetically-latched bay in the back
 - **Fully 3D-printed cabinet** — one Bambu Studio project prints the whole enclosure
 
@@ -61,7 +61,7 @@ Prefer a step-by-step walkthrough with photos? The same build is documented as t
 | **Power** | 9 V battery → on-board Mini360 buck converter → 5 V, with a slide switch on the board |
 | **Connectivity** | 2.4 GHz WiFi — the remote joins the robot's access point as a station |
 | **Control** | 6-byte binary UDP packets to `192.168.4.1:1234` |
-| **Update rate** | 20 Hz (50 ms loop), sent continuously including standby |
+| **Update rate** | Sent on change (30 ms settle), plus a 20 Hz heartbeat that runs continuously, including standby |
 | **Enclosure** | 3D-printed body, cover, bottom plate and magnetic battery cover |
 
 ## Bill of Materials
@@ -169,7 +169,7 @@ Edit these near the top of the sketch to match your robot:
 | `udpAddress` | `192.168.4.1` | The robot's IP as the AP |
 | `udpPort` | `1234` | UDP port the robot listens on |
 
-`setup()` blocks until the robot's network is reachable, so power the robot up first.
+The remote connects in the background and keeps retrying, so the robot and the remote can be powered up in either order. If the robot drops out, the remote reconnects on its own when it comes back.
 
 The same remote drives every RookiDroid hexapod — each one hosts its own access point at `192.168.4.1` and listens on port `1234`, so only `ssid` changes:
 
@@ -185,13 +185,19 @@ If you changed the credentials in your robot's own `config.h`, match them here.
 
 | Color | Meaning |
 | ----- | ------- |
-| Off | Still connecting (or no power) |
-| Green | Connected — commands are being sent |
-| Red | WiFi lost; the sketch keeps running and recovers when the robot comes back |
+| Off | No power |
+| Blinking blue | Connecting to the robot for the first time |
+| Blinking red | WiFi lost; the remote keeps retrying and recovers when the robot comes back |
+| Green | Connected, standing by |
+| Cyan | Connected, walking or turning |
+| Yellow | Connected, turbo (fast forward/backward) |
+| Magenta | Connected, body motion (pitch, roll, yaw or twist) |
 
 ## Controls
 
-Every 50 ms the firmware reads all nine switches and sends exactly one command. Nothing pressed sends `CMD_STANDBY`, so the robot stops as soon as you let go.
+The firmware reads all nine switches every 5 ms and maps them to exactly one command. Once a new command has held for 30 ms, it is sent right away. The current command is also resent every 50 ms as a heartbeat. Nothing pressed sends `CMD_STANDBY`, so the robot stops as soon as you let go.
+
+The 30 ms settle time means you don't have to press combos such as **special + up** perfectly together: the command the robot gets is the finished combo, not whichever button closed first.
 
 **Joystick** (takes priority over the buttons):
 
@@ -259,7 +265,7 @@ The layout matches `UdpControlPacket` in the hexapod firmware — see the [hexap
 
 | Symptom | Things to check |
 | ------- | --------------- |
-| LED stays off, Serial prints dots forever | The robot isn't powered up, or the SSID/password don't match — `setup()` waits for the AP |
+| LED keeps blinking blue | The robot isn't powered up, or the SSID/password don't match — the remote keeps retrying until it finds the AP |
 | LED is green but the robot ignores the remote | `udpAddress` and `udpPort` must match the robot, and the robot must be in its normal (non-calibration) mode |
 | One direction never triggers | Check that switch's signal wire and its `GND` — an unconnected `INPUT_PULLUP` pin just reads high forever |
 | Diagonals don't work | The joystick has a 4-way restrictor plate fitted; swap in the 8-way gate |
