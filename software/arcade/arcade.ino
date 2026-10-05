@@ -53,7 +53,7 @@
 
 
 // WiFi parameters
-const char *ssid = "hexapod_nougat";
+const char *ssid = "hexapod_macaroon";
 const char *password = "hexapod_1234";
 
 // UDP
